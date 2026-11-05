@@ -1,0 +1,48 @@
+# Pawprint – Supabase local/branch configuration
+project_id = "pawprint"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
+
+# Runs on `supabase db reset` AND on every preview branch.
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+# Wildcards let preview deployments sign in without extra config.
+additional_redirect_urls = ["http://localhost:5173", "https://*.vercel.app", "https://*.netlify.app"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false   # off locally; turn on for production in the dashboard
+
+# ---- Edge Functions ----
+[functions.vet-search]
+verify_jwt = true     # logged-in users only
+
+[functions.share-link]
+verify_jwt = true     # logged-in users only
+
+[functions.vaccine-reminders]
+verify_jwt = false    # called by pg_cron; protected by x-cron-secret header instead
