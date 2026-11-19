@@ -61,6 +61,7 @@ create table public.documents (
   created_at   timestamptz not null default now()
 );
 create index documents_pet_idx on public.documents (pet_id, created_at desc);
+create index documents_owner_idx on public.documents (owner_id);
 
 -- Growth --------------------------------------------------------------------
 create table public.weight_entries (
@@ -87,6 +88,7 @@ create table public.vaccinations (
 );
 create index vaccinations_pet_idx on public.vaccinations (pet_id, administered_on desc);
 create index vaccinations_due_idx on public.vaccinations (next_due_on) where next_due_on is not null;
+create index vaccinations_document_idx on public.vaccinations (document_id) where document_id is not null;
 
 -- Surgeries, illnesses, checkups ------------------------------------------------
 create table public.medical_events (
@@ -129,6 +131,7 @@ create table public.dna_results (
   created_at      timestamptz not null default now()
 );
 create index dna_results_pet_idx on public.dna_results (pet_id);
+create index dna_results_document_idx on public.dna_results (document_id) where document_id is not null;
 
 -- Saved vets (per owner, not per pet) -------------------------------------------
 create table public.saved_vets (
