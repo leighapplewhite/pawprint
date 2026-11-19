@@ -17,6 +17,10 @@ major_version = 17
 enabled = true
 sql_paths = ["./seed.sql"]
 
+[db.pooler]
+default_pool_size = 15
+max_client_conn = 200
+
 [studio]
 enabled = true
 port = 54323
@@ -25,17 +29,35 @@ port = 54323
 enabled = true
 file_size_limit = "50MiB"
 
+[storage.analytics]
+enabled = true
+max_namespaces = 10
+
+[storage.image_transformation]
+enabled = true
+
+[storage.vector]
+enabled = false
+
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
-# Wildcards let preview deployments sign in without extra config.
-additional_redirect_urls = ["http://localhost:5173", "https://*.vercel.app", "https://*.netlify.app"]
+site_url = "https://pawprintskeeper.com"
+additional_redirect_urls = ["https://pawprintskeeper.com", "http://localhost:5173"]
 jwt_expiry = 3600
 enable_signup = true
 
 [auth.email]
 enable_signup = true
-enable_confirmations = false   # off locally; turn on for production in the dashboard
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.sms]
+enable_confirmations = true
 
 # ---- Edge Functions ----
 [functions.vet-search]
