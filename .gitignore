@@ -5,3 +5,6 @@ dist
 supabase/.branches
 supabase/.temp
 supabase/functions/.env
+
+.DS_Store
+.vscode

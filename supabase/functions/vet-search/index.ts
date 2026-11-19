@@ -2,17 +2,63 @@
 // POST { location?: string, lat?: number, lng?: number, radius_km?: number }
 import { corsHeaders, json } from '../_shared/cors.ts';
 
-// Nominatim's usage policy requires an identifying User-Agent. Change the contact!
-const UA = 'PawprintDogfood/1.0 (contact: you@example.com)';
+// Nominatim's usage policy requires an identifying User-Agent. It blocks the
+// example.com placeholder, so add a real contact here for production use.
+const UA = 'PawprintDogfood/1.0';
 
 type Point = { lat: number; lng: number };
 
 async function geocode(q: string): Promise<Point | null> {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA } });
-  if (!res.ok) return null;
-  const rows = await res.json();
-  return rows.length ? { lat: Number(rows[0].lat), lng: Number(rows[0].lon) } : null;
+  // Nominatim first; fall back to Photon (also OSM-based) if it rejects us.
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`,
+      { headers: { 'User-Agent': UA } },
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (rows.length) return { lat: Number(rows[0].lat), lng: Number(rows[0].lon) };
+    }
+  } catch (err) {
+    console.error('nominatim failed', err);
+  }
+  try {
+    const res = await fetch(`https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(q)}`, {
+      headers: { 'User-Agent': UA },
+    });
+    if (res.ok) {
+      const { features = [] } = await res.json();
+      const c = features[0]?.geometry?.coordinates;
+      if (c) return { lat: Number(c[1]), lng: Number(c[0]) };
+    }
+  } catch (err) {
+    console.error('photon failed', err);
+  }
+  return null;
+}
+
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
+
+async function overpass(query: string): Promise<any | null> {
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(12000),
+      });
+      if (res.ok) return await res.json();
+      console.error('overpass', url, res.status);
+    } catch (err) {
+      console.error('overpass failed', url, err);
+    }
+  }
+  return null;
 }
 
 function distanceKm(a: Point, b: Point): number {
@@ -41,14 +87,10 @@ Deno.serve(async (req) => {
     const radiusM = Math.min(Math.max(Number(radius_km) || 15, 1), 50) * 1000;
     const query = `[out:json][timeout:20];nwr["amenity"="veterinary"](around:${radiusM},${center.lat},${center.lng});out center tags 60;`;
 
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-    });
-    if (!res.ok) return json({ error: 'The clinic directory is busy. Try again in a moment.' }, 502);
+    const data = await overpass(query);
+    if (!data) return json({ error: 'The clinic directory is busy. Try again in a moment.' }, 502);
 
-    const { elements = [] } = await res.json();
+    const { elements = [] } = data;
 
     const results = elements
       .map((el: any) => {
