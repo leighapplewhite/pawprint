@@ -1,7 +1,7 @@
 -- pgTAP: people must only see their own family's data. Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(12);
 
 -- The sign-up trigger gives each user a family.
 insert into auth.users (id, instance_id, aud, role, email) values
@@ -37,6 +37,22 @@ insert into invite_token select token from public.family_invites;
 select set_config('request.jwt.claims', json_build_object('sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'role', 'authenticated')::text, true);
 select lives_ok($$ select public.accept_family_invite((select token from invite_token)) $$, 'A accepts the invite');
 select is((select count(*) from public.pets)::int, 2, 'A now sees both pets');
+-- Authorship: stamped from the signed-in user, and never rewritten by edits.
+insert into public.weight_entries (id, pet_id, weight_kg, created_by)
+  values ('c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', 7, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+select is(
+  (select created_by from public.weight_entries where id = 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1'),
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'created_by is the signed-in user, even if the client claims someone else');
+
+select set_config('request.jwt.claims', json_build_object('sub', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'role', 'authenticated')::text, true);
+select lives_ok(
+  $$ update public.weight_entries set weight_kg = 8, created_by = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' where id = 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1' $$,
+  'another family member can edit the entry');
+select is(
+  (select created_by from public.weight_entries where id = 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1'),
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'editing never changes who made the entry');
+select set_config('request.jwt.claims', json_build_object('sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'role', 'authenticated')::text, true);
+
 select throws_ok(
   $$ select public.accept_family_invite((select token from invite_token)) $$,
   'P0001', null, 'an invite link can only be used once');

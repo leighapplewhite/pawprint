@@ -248,3 +248,7 @@ label > span:first-child { display: block; font-size: .85rem; font-weight: 600; 
 .linkbox input { flex: 1 1 16rem; width: auto; font-size: .85rem; }
 .note p { margin: 0; }
 .chip.owner { background: var(--plum); color: var(--on-plum); }
+
+/* Who added an entry */
+.byline { display: block; color: var(--muted); font-size: .85rem; margin-top: .15rem; }
+.stamp .byline { color: var(--c); opacity: .85; margin-top: .3rem; }

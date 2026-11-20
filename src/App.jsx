@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { ageLabel } from './lib/useRows';
+import { UserContext } from './lib/user';
+import Byline from './components/Byline';
 import Landing from './components/Landing';
 import Auth from './components/Auth';
 import SetPassword from './components/SetPassword';
@@ -115,7 +117,8 @@ function Home({ user }) {
 
   const loadPets = useCallback(async () => {
     if (!familyId) { setPets([]); return; }
-    const { data, error } = await supabase.from('pets').select('*').eq('family_id', familyId).order('created_at');
+    const { data, error } = await supabase.from('pets').select('*, author:profiles!owner_id ( display_name )')
+      .eq('family_id', familyId).order('created_at');
     if (error) setError(error.message);
     const list = data ?? [];
     setPets(list);
@@ -167,6 +170,7 @@ function Home({ user }) {
   }
 
   return (
+    <UserContext.Provider value={user.id}>
     <div className="site">
       <SiteHeader onHome={() => setPage('pets')}>
         <span className="muted small hide-sm">{user.email}</span>
@@ -228,6 +232,7 @@ function Home({ user }) {
                     <h1>{pet.name}</h1>
                     <p>{[pet.breed, pet.sex !== 'unknown' && pet.sex, ageLabel(pet.birthdate)].filter(Boolean).join(', ')}</p>
                     {pet.microchip_id && <p className="muted small">Microchip {pet.microchip_id}</p>}
+                    <Byline row={pet} />
                     {!avatar && <p className="muted small">Upload a photo on the Files tab and it will show up here.</p>}
                   </div>
                   <button className="link danger" onClick={removePet}>Delete pet</button>
@@ -253,5 +258,6 @@ function Home({ user }) {
 
       <SiteFooter />
     </div>
+    </UserContext.Provider>
   );
 }

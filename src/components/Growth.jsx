@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useRows, fmtDate } from '../lib/useRows';
 import AddForm from './AddForm';
+import Byline from './Byline';
 
 const KG_TO_LB = 2.20462;
 
@@ -70,7 +71,10 @@ export default function Growth({ pet }) {
           <ul className="rows">
             {[...rows].reverse().map((r) => (
               <li key={r.id}>
-                <span><strong>{(Number(r.weight_kg) * factor).toFixed(1)} {unit}</strong> · {fmtDate(r.measured_on)}{r.notes && <em> — {r.notes}</em>}</span>
+                <span>
+                  <strong>{(Number(r.weight_kg) * factor).toFixed(1)} {unit}</strong> · {fmtDate(r.measured_on)}{r.notes && <em> — {r.notes}</em>}
+                  <Byline row={r} />
+                </span>
                 <button className="link" onClick={() => remove(r.id)}>Delete</button>
               </li>
             ))}
