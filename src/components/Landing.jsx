@@ -66,7 +66,7 @@ export default function Landing({ onStart }) {
 
             <article className="blk b-plum span2">
               <h3>Photos and papers in one safe place</h3>
-              <p>Upload vaccine certificates, lab results, insurance, and photos. Only you can see them.</p>
+              <p>Upload vaccine certificates, lab results, insurance, and photos. Only your family can see them.</p>
             </article>
 
             <article className="blk b-ice span3">
@@ -77,6 +77,11 @@ export default function Landing({ onStart }) {
             <article className="blk b-lav span3">
               <h3>Find a vet nearby</h3>
               <p>Search by city, ZIP code, or your location, and save the clinics you like.</p>
+            </article>
+
+            <article className="blk b-amber span6">
+              <h3>Share it with the whole household</h3>
+              <p>Invite a partner, a roommate, or the kids with a link. Everyone in the family sees the same pets, records, and photos, and owners can remove anyone at any time.</p>
             </article>
           </div>
         </section>
@@ -95,8 +100,8 @@ export default function Landing({ onStart }) {
             <div>
               <h2>Private by default</h2>
               <p>
-                Every account sees only its own pets. Files sit in private storage, and a share link
-                stops working after 48 hours.
+                Only people you invite to your family can see your pets. Files sit in private storage,
+                and a share link stops working after 48 hours.
               </p>
             </div>
             <button className="on-band big-btn" onClick={() => onStart('signup')}>Create your account</button>

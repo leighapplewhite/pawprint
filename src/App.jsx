@@ -4,6 +4,8 @@ import { ageLabel } from './lib/useRows';
 import Landing from './components/Landing';
 import Auth from './components/Auth';
 import SetPassword from './components/SetPassword';
+import JoinInvite from './components/JoinInvite';
+import Family from './components/Family';
 import { SiteHeader, SiteFooter } from './components/Site';
 import AddForm from './components/AddForm';
 import Growth from './components/Growth';
@@ -18,10 +20,25 @@ const TABS = [
   ['files', 'Files'], ['dna', 'DNA'], ['vets', 'Vets'],
 ];
 
+// localStorage can be blocked (private mode, strict settings), so never let it throw.
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* ignore */ } },
+};
+
 export default function App() {
   const [session, setSession] = useState(undefined);
   const [recovery, setRecovery] = useState(false);
-  const [view, setView] = useState({ name: 'landing' });
+  // An invite link looks like https://site/?invite=<token>. Remember it through sign-up and sign-in.
+  const [inviteToken, setInviteToken] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('invite');
+    if (fromUrl) {
+      store.set('pawprint_invite', fromUrl);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    return store.get('pawprint_invite');
+  });
+  const [view, setView] = useState(inviteToken ? { name: 'auth', mode: 'signup' } : { name: 'landing' });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -35,7 +52,6 @@ export default function App() {
 
   if (session === undefined) return <p className="loading">Loading…</p>;
 
-  // Arrived from a "reset password" email.
   if (session && recovery) {
     return (
       <div className="site">
@@ -48,31 +64,67 @@ export default function App() {
 
   if (!session) {
     return view.name === 'auth'
-      ? <Auth initialMode={view.mode} onHome={() => setView({ name: 'landing' })} />
+      ? <Auth initialMode={view.mode} invited={!!inviteToken} onHome={() => setView({ name: 'landing' })} />
       : <Landing onStart={(mode) => setView({ name: 'auth', mode })} />;
+  }
+
+  if (inviteToken) {
+    const finish = (familyId) => {
+      if (familyId) store.set('pawprint_family', familyId);
+      store.set('pawprint_invite', null);
+      setInviteToken(null);
+    };
+    return (
+      <div className="site">
+        <SiteHeader onHome={() => finish(null)} />
+        <main className="wrap app"><JoinInvite token={inviteToken} onDone={finish} /></main>
+        <SiteFooter />
+      </div>
+    );
   }
 
   return <Home user={session.user} />;
 }
 
 function Home({ user }) {
+  const [families, setFamilies] = useState([]);
+  const [familyId, setFamilyId] = useState(null);
   const [pets, setPets] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState('growth');
-  const [page, setPage] = useState('pets'); // pets | password
+  const [page, setPage] = useState('pets'); // pets | password | family
   const [avatar, setAvatar] = useState(null);
   const [error, setError] = useState(null);
 
-  const loadPets = useCallback(async () => {
-    const { data, error } = await supabase.from('pets').select('*').order('created_at');
+  const loadFamilies = useCallback(async () => {
+    const { data, error } = await supabase.from('family_members')
+      .select('role, families ( id, name )').eq('user_id', user.id);
     if (error) setError(error.message);
-    setPets(data ?? []);
-    setSelectedId((cur) => cur ?? data?.[0]?.id ?? null);
-    if (!data?.length) setAdding(true);
-  }, []);
+    const list = (data ?? []).filter((r) => r.families)
+      .map((r) => ({ id: r.families.id, name: r.families.name, role: r.role }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    setFamilies(list);
+    setFamilyId((cur) => {
+      const want = cur ?? store.get('pawprint_family');
+      return list.some((f) => f.id === want) ? want : list[0]?.id ?? null;
+    });
+  }, [user.id]);
+  useEffect(() => { loadFamilies(); }, [loadFamilies]);
+  useEffect(() => { if (familyId) store.set('pawprint_family', familyId); }, [familyId]);
+
+  const loadPets = useCallback(async () => {
+    if (!familyId) { setPets([]); return; }
+    const { data, error } = await supabase.from('pets').select('*').eq('family_id', familyId).order('created_at');
+    if (error) setError(error.message);
+    const list = data ?? [];
+    setPets(list);
+    setSelectedId((cur) => (list.some((p) => p.id === cur) ? cur : list[0]?.id ?? null));
+    setAdding(list.length === 0);
+  }, [familyId]);
   useEffect(() => { loadPets(); }, [loadPets]);
 
+  const family = families.find((f) => f.id === familyId);
   const pet = pets.find((p) => p.id === selectedId);
 
   // The most recent photo uploaded for this pet becomes their portrait.
@@ -90,7 +142,7 @@ function Home({ user }) {
   }, [pet?.id, tab]);
 
   async function addPet(values) {
-    const { data, error } = await supabase.from('pets').insert(values).select().single();
+    const { data, error } = await supabase.from('pets').insert({ ...values, family_id: familyId }).select().single();
     if (error) { setError(error.message); return false; }
     setError(null);
     await loadPets();
@@ -100,12 +152,18 @@ function Home({ user }) {
   }
 
   async function removePet() {
-    if (!confirm(`Delete ${pet.name} and all of their records? Uploaded files stay in storage until you delete them from Files.`)) return;
+    if (!confirm(`Delete ${pet.name} and all of their records for everyone in ${family?.name ?? 'this family'}? Uploaded files stay in storage until you delete them from Files.`)) return;
     const { error } = await supabase.from('pets').delete().eq('id', pet.id);
     if (error) return setError(error.message);
     setSelectedId(null);
-    setAdding(false);
     loadPets();
+  }
+
+  function switchFamily(id) {
+    setFamilyId(id);
+    setSelectedId(null);
+    setAdding(false);
+    setPage('pets');
   }
 
   return (
@@ -119,11 +177,28 @@ function Home({ user }) {
       <main className="wrap app">
         {error && <p className="note err" role="alert">{error}</p>}
 
-        {page === 'password' ? (
+        {page === 'password' && (
           <SetPassword title="Change your password" doneLabel="Back to my pets" onDone={() => setPage('pets')} />
-        ) : (
+        )}
+
+        {page === 'family' && family && (
+          <Family family={family} user={user} onBack={() => setPage('pets')} onChanged={loadFamilies}
+            onLeft={() => { setFamilyId(null); setPage('pets'); loadFamilies(); }} />
+        )}
+
+        {page === 'pets' && (
           <>
-            <nav className="petbar" aria-label="Your pets">
+            <div className="familybar">
+              {families.length > 1 ? (
+                <label className="familypick"><span>Family</span>
+                  <select value={familyId ?? ''} onChange={(e) => switchFamily(e.target.value)}>
+                    {families.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select></label>
+              ) : <strong className="familyname">{family?.name}</strong>}
+              <button className="link" onClick={() => setPage('family')}>Family and sharing</button>
+            </div>
+
+            <nav className="petbar" aria-label="Pets in this family">
               {pets.map((p) => (
                 <button key={p.id} className={`pill ${p.id === selectedId && !adding ? 'on' : ''}`}
                   onClick={() => { setSelectedId(p.id); setAdding(false); }}>{p.name}</button>
@@ -147,7 +222,7 @@ function Home({ user }) {
               <>
                 <header className="passport">
                   <div className="arch avatar">
-                    {avatar ? <img src={avatar} alt={`${pet.name}`} /> : <span aria-hidden="true">{pet.name[0]}</span>}
+                    {avatar ? <img src={avatar} alt={pet.name} /> : <span aria-hidden="true">{pet.name[0]}</span>}
                   </div>
                   <div className="passport-info">
                     <h1>{pet.name}</h1>

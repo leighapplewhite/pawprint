@@ -1,31 +1,41 @@
 -- DEMO DATA: runs on `supabase db reset` and on every preview branch.
--- Never put real data here. Login: demo@pawprint.test / password123
+-- Never put real data here. Logins (password123 for both):
+--   demo@pawprint.test  owns "Demo Parent's family" and the pet Biscuit
+--   partner@pawprint.test  is a member of that family (to try the family view)
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
   confirmation_token, recovery_token, email_change, email_change_token_new
-) values (
-  '00000000-0000-0000-0000-000000000000',
-  '11111111-1111-1111-1111-111111111111',
+) values
+ ('00000000-0000-0000-0000-000000000000', '11111111-1111-1111-1111-111111111111',
   'authenticated', 'authenticated', 'demo@pawprint.test',
   extensions.crypt('password123', extensions.gen_salt('bf')), now(),
-  '{"provider":"email","providers":["email"]}', '{"display_name":"Demo Parent"}',
-  now(), now(), '', '', '', ''
-) on conflict (id) do nothing;
+  '{"provider":"email","providers":["email"]}', '{"display_name":"Demo Parent"}', now(), now(), '', '', '', ''),
+ ('00000000-0000-0000-0000-000000000000', '33333333-3333-3333-3333-333333333333',
+  'authenticated', 'authenticated', 'partner@pawprint.test',
+  extensions.crypt('password123', extensions.gen_salt('bf')), now(),
+  '{"provider":"email","providers":["email"]}', '{"display_name":"Demo Partner"}', now(), now(), '', '', '', '')
+on conflict (id) do nothing;
+-- The on-signup trigger has now created a profile and a family for each user.
 
-insert into auth.identities (
-  id, user_id, provider_id, identity_data, provider, created_at, updated_at, last_sign_in_at
-) values (
-  gen_random_uuid(), '11111111-1111-1111-1111-111111111111',
-  '11111111-1111-1111-1111-111111111111',
-  '{"sub":"11111111-1111-1111-1111-111111111111","email":"demo@pawprint.test"}',
-  'email', now(), now(), now()
-) on conflict do nothing;
+insert into auth.identities (id, user_id, provider_id, identity_data, provider, created_at, updated_at, last_sign_in_at) values
+ (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111',
+  '{"sub":"11111111-1111-1111-1111-111111111111","email":"demo@pawprint.test"}', 'email', now(), now(), now()),
+ (gen_random_uuid(), '33333333-3333-3333-3333-333333333333', '33333333-3333-3333-3333-333333333333',
+  '{"sub":"33333333-3333-3333-3333-333333333333","email":"partner@pawprint.test"}', 'email', now(), now(), now())
+on conflict do nothing;
 
-insert into public.pets (id, owner_id, name, species, breed, sex, birthdate, microchip_id)
-values ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111',
-        'Biscuit', 'dog', 'Golden Retriever', 'male', current_date - 425, '985112345678901')
+-- Put the partner into the demo family.
+insert into public.family_members (family_id, user_id, role)
+select f.id, '33333333-3333-3333-3333-333333333333', 'member'
+from public.families f where f.created_by = '11111111-1111-1111-1111-111111111111'
+on conflict do nothing;
+
+insert into public.pets (id, owner_id, family_id, name, species, breed, sex, birthdate, microchip_id)
+select '22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', f.id,
+       'Biscuit', 'dog', 'Golden Retriever', 'male', current_date - 425, '985112345678901'
+from public.families f where f.created_by = '11111111-1111-1111-1111-111111111111'
 on conflict (id) do nothing;
 
 insert into public.weight_entries (pet_id, measured_on, weight_kg, notes) values
