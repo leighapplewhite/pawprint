@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { fmtDate } from '../lib/useRows';
+import { SITE_URL } from '../lib/site';
 
-const inviteLink = (token) => `${window.location.origin}/?invite=${token}`;
+const inviteLink = (token) => `${SITE_URL}/?invite=${token}`;
 
 export default function Family({ family, user, onBack, onChanged, onLeft }) {
   const isOwner = family.role === 'owner';
