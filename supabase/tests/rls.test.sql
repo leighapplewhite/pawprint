@@ -1,19 +1,23 @@
--- pgTAP: users must never see or write another user's data. Run with `supabase test db`.
+-- pgTAP: people must only see their own family's data. Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(4);
+select plan(12);
 
+-- The sign-up trigger gives each user a family.
 insert into auth.users (id, instance_id, aud, role, email) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'a@test.dev'),
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'b@test.dev');
 
-insert into public.pets (id, owner_id, name) values
-  ('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Alpha'),
-  ('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Beta');
+insert into public.pets (id, owner_id, family_id, name)
+select 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', created_by, id, 'Alpha' from public.families where created_by = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+insert into public.pets (id, owner_id, family_id, name)
+select 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', created_by, id, 'Beta' from public.families where created_by = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+create temp table invite_token (token uuid);
+grant all on invite_token to authenticated;
 
 set local role authenticated;
-select set_config('request.jwt.claims',
-  json_build_object('sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'role', 'authenticated')::text, true);
+select set_config('request.jwt.claims', json_build_object('sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'role', 'authenticated')::text, true);
 
 select is((select count(*) from public.pets)::int, 1, 'user A sees exactly one pet');
 select is_empty($$ select 1 from public.pets where name = 'Beta' $$, 'user A cannot see user B''s pet');
@@ -23,6 +27,44 @@ select throws_ok(
 select lives_ok(
   $$ insert into public.weight_entries (pet_id, weight_kg) values ('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', 5) $$,
   'user A can log weight for their own pet');
+
+-- B invites A.
+select set_config('request.jwt.claims', json_build_object('sub', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'role', 'authenticated')::text, true);
+insert into public.family_invites (family_id)
+  select id from public.families where created_by = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+insert into invite_token select token from public.family_invites;
+
+select set_config('request.jwt.claims', json_build_object('sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'role', 'authenticated')::text, true);
+select lives_ok($$ select public.accept_family_invite((select token from invite_token)) $$, 'A accepts the invite');
+select is((select count(*) from public.pets)::int, 2, 'A now sees both pets');
+-- Authorship: stamped from the signed-in user, and never rewritten by edits.
+insert into public.weight_entries (id, pet_id, weight_kg, created_by)
+  values ('c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', 7, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+select is(
+  (select created_by from public.weight_entries where id = 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1'),
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'created_by is the signed-in user, even if the client claims someone else');
+
+select set_config('request.jwt.claims', json_build_object('sub', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'role', 'authenticated')::text, true);
+select lives_ok(
+  $$ update public.weight_entries set weight_kg = 8, created_by = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' where id = 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1' $$,
+  'another family member can edit the entry');
+select is(
+  (select created_by from public.weight_entries where id = 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1'),
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'editing never changes who made the entry');
+select set_config('request.jwt.claims', json_build_object('sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'role', 'authenticated')::text, true);
+
+select throws_ok(
+  $$ select public.accept_family_invite((select token from invite_token)) $$,
+  'P0001', null, 'an invite link can only be used once');
+select throws_ok(
+  $$ insert into public.family_invites (family_id) select id from public.families where created_by = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' $$,
+  '42501', null, 'a plain member cannot create invites');
+
+-- The only owner cannot leave.
+select set_config('request.jwt.claims', json_build_object('sub', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'role', 'authenticated')::text, true);
+select results_eq(
+  $$ with d as (delete from public.family_members where user_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' returning 1) select count(*)::int from d $$,
+  $$ values (0) $$, 'the last owner cannot leave their family');
 
 reset role;
 select * from finish();

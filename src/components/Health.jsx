@@ -1,5 +1,6 @@
 import { useRows, fmtDate } from '../lib/useRows';
 import AddForm from './AddForm';
+import Byline from './Byline';
 
 function dueState(due) {
   if (!due) return { cls: 'none', label: 'No due date' };
@@ -27,6 +28,7 @@ export default function Health({ pet }) {
                 <p>Given {fmtDate(v.administered_on)}</p>
                 <p className="status">{s.label}</p>
                 {v.vet_name && <p className="muted">{v.vet_name}</p>}
+                <Byline row={v} />
                 <button className="link" onClick={() => vax.remove(v.id)}>Delete</button>
               </article>
             );
@@ -54,6 +56,7 @@ export default function Health({ pet }) {
                 {e.vet_name && <> · {e.vet_name}</>}
                 {e.cost_cents != null && <> · ${(e.cost_cents / 100).toFixed(2)}</>}
                 {e.notes && <em> — {e.notes}</em>}
+                <Byline row={e} />
               </span>
               <button className="link" onClick={() => events.remove(e.id)}>Delete</button>
             </li>

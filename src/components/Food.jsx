@@ -1,5 +1,6 @@
 import { useRows, fmtDate } from '../lib/useRows';
 import AddForm from './AddForm';
+import Byline from './Byline';
 
 export default function Food({ pet }) {
   const { rows, loading, error, add, remove } = useRows('food_logs', pet.id, 'started_on', false);
@@ -21,6 +22,7 @@ export default function Food({ pet }) {
                 {r.daily_amount_g && <> · {r.daily_amount_g} g/day</>}
                 {r.rating && <> · {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</>}
                 {r.reaction_notes && <em> — {r.reaction_notes}</em>}
+                <Byline row={r} />
               </span>
               <button className="link" onClick={() => remove(r.id)}>Delete</button>
             </li>

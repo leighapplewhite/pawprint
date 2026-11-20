@@ -4,7 +4,7 @@ import { SiteHeader, SiteFooter, Arch } from './Site';
 
 const TABS = [['signin', 'Sign in'], ['signup', 'Create account'], ['magic', 'Email link']];
 
-export default function Auth({ initialMode = 'signin', onHome }) {
+export default function Auth({ initialMode = 'signin', invited = false, onHome }) {
   const [mode, setMode] = useState(initialMode); // signin | signup | magic | reset
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +49,7 @@ export default function Auth({ initialMode = 'signin', onHome }) {
       <main className="wrap auth-page">
         <section className="auth-card">
           <h1>{heading}</h1>
+          {invited && <p className="note ok">You’ve been invited to join a family. Create an account or sign in, then confirm to join.</p>}
 
           {mode !== 'reset' ? (
             <div className="seg" role="tablist">

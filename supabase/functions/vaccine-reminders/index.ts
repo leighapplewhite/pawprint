@@ -1,5 +1,5 @@
-// vaccine-reminders: emails owners about vaccinations due within 14 days (or overdue).
-// Triggered daily by pg_cron (see supabase/snippets/schedule-reminders.sql).
+// vaccine-reminders: emails every member of a family about vaccinations due within 14 days
+// (or overdue). Triggered daily by pg_cron (see supabase/snippets/schedule-reminders.sql).
 // Protected by a shared secret header because it uses the service role key.
 //
 // Secrets: CRON_SECRET (required), RESEND_API_KEY + REMINDER_FROM (optional; without them we just log)
@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
 
   const { data: due, error } = await admin
     .from('vaccinations')
-    .select('id, name, next_due_on, pets ( name, owner_id )')
+    .select('id, name, next_due_on, pets ( name, family_id )')
     .not('next_due_on', 'is', null)
     .lte('next_due_on', horizon);
   if (error) return new Response(error.message, { status: 500 });
@@ -34,18 +34,27 @@ Deno.serve(async (req) => {
     .in('vaccination_id', (due ?? []).map((v) => v.id));
   const sent = new Set((already ?? []).map((r) => `${r.vaccination_id}:${r.due_on}`));
 
-  // Group the not-yet-reminded vaccinations by owner so each person gets one email.
-  const byOwner = new Map<string, any[]>();
-  for (const v of due ?? []) {
-    if (sent.has(`${v.id}:${v.next_due_on}`)) continue;
+  const pending = (due ?? []).flatMap((v) => {
+    if (sent.has(`${v.id}:${v.next_due_on}`)) return [];
     const pet = Array.isArray(v.pets) ? v.pets[0] : v.pets;
-    if (!pet) continue;
-    byOwner.set(pet.owner_id, [...(byOwner.get(pet.owner_id) ?? []), { ...v, pet_name: pet.name }]);
+    return pet ? [{ ...v, pet_name: pet.name, family_id: pet.family_id }] : [];
+  });
+
+  // Everyone in each affected family gets one email listing their family's vaccinations.
+  const familyIds = [...new Set(pending.map((v) => v.family_id))];
+  const { data: members } = await admin
+    .from('family_members').select('family_id, user_id').in('family_id', familyIds);
+
+  const byUser = new Map<string, any[]>();
+  for (const m of members ?? []) {
+    const items = pending.filter((v) => v.family_id === m.family_id);
+    if (items.length) byUser.set(m.user_id, [...(byUser.get(m.user_id) ?? []), ...items]);
   }
 
+  const delivered = new Set<string>(); // vaccination ids that reached at least one person
   let emails = 0;
-  for (const [ownerId, items] of byOwner) {
-    const { data: userRes } = await admin.auth.admin.getUserById(ownerId);
+  for (const [userId, items] of byUser) {
+    const { data: userRes } = await admin.auth.admin.getUserById(userId);
     const email = userRes?.user?.email;
     if (!email) continue;
 
@@ -68,11 +77,15 @@ Deno.serve(async (req) => {
     } else {
       console.log(`[dry run] would email ${email}:\n${text}`);
     }
-
-    await admin.from('reminder_log').insert(
-      items.map((v) => ({ vaccination_id: v.id, due_on: v.next_due_on })),
-    );
+    items.forEach((v) => delivered.add(v.id));
     emails++;
+  }
+
+  if (delivered.size) {
+    await admin.from('reminder_log').upsert(
+      pending.filter((v) => delivered.has(v.id)).map((v) => ({ vaccination_id: v.id, due_on: v.next_due_on })),
+      { onConflict: 'vaccination_id,due_on', ignoreDuplicates: true },
+    );
   }
 
   return Response.json({ checked: due?.length ?? 0, emails });

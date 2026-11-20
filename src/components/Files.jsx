@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRows, fmtDate } from '../lib/useRows';
 import { uploadPetFile, deletePetFile, signedUrlsFor, prettySize } from '../lib/files';
+import Byline from './Byline';
 
 const CATEGORIES = [
   ['photo', 'Photo'], ['vaccine_record', 'Vaccine record'], ['lab_result', 'Lab result'],
@@ -67,7 +68,7 @@ export default function Files({ pet, user }) {
             <span className="primary">{busy ? 'Uploading…' : 'Choose files'}</span>
           </label>
         </div>
-        <p className="muted small">Photos up to 10 MB. Other files up to 25 MB (PDF, image, CSV, TXT, JSON, ZIP). Only you can see them.</p>
+        <p className="muted small">Photos up to 10 MB. Other files up to 25 MB (PDF, image, CSV, TXT, JSON, ZIP). Only your family can see them.</p>
         {error && <p className="note err" role="alert">{error}</p>}
       </section>
 
@@ -89,6 +90,7 @@ export default function Files({ pet, user }) {
               <figcaption>
                 <strong title={d.file_name}>{d.caption || d.file_name}</strong>
                 <span className="muted small">{label(d.category)} · {prettySize(d.size_bytes ?? 0)} · {fmtDate(d.created_at.slice(0, 10))}</span>
+                <Byline row={d} />
                 <span className="actions">
                   {urls[d.storage_path] && <a href={urls[d.storage_path]} target="_blank" rel="noreferrer">Open</a>}
                   <button className="link" onClick={() => makeShareLink(d)}>Share link</button>

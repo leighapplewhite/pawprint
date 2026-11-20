@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useRows, fmtDate } from '../lib/useRows';
 import { uploadPetFile } from '../lib/files';
 import AddForm from './AddForm';
+import Byline from './Byline';
 
 // "Golden Retriever 62\nLabrador 25.5%" -> [{ breed, percent }]
 function parseBreakdown(text) {
@@ -52,6 +53,7 @@ export default function Dna({ pet, user }) {
             ))}
             {r.health_notes && <p className="muted">{r.health_notes}</p>}
             {r.document_id && <p className="muted small">Original report saved in Files.</p>}
+            <Byline row={r} />
           </article>
         ))}
       </section>
